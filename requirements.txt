@@ -5,3 +5,9 @@ plotly
 Pillow
 sqlalchemy
 werkzeug
+
+streamlit-paste-button
+
+audio-recorder-streamlit
+google-genai
+python-dotenv

@@ -36,10 +36,17 @@ def init_db():
             strategy_id INTEGER NOT NULL,
             image_path TEXT NOT NULL,
             comment TEXT,
+            audio_path TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE
         )
     ''')
+    
+    # Check if audio_path needs to be added to an existing strategy_examples table
+    c.execute("PRAGMA table_info(strategy_examples)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'audio_path' not in columns:
+        c.execute("ALTER TABLE strategy_examples ADD COLUMN audio_path TEXT")
 
     # Table: Trades (The main Journal)
     c.execute('''
@@ -53,10 +60,17 @@ def init_db():
             pnl REAL,
             image_path TEXT,
             notes TEXT,
+            audio_path TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (strategy_id) REFERENCES strategies (id)
+            FOREIGN KEY (strategy_id) REFERENCES strategies (id) ON DELETE CASCADE
         )
     ''')
+    
+    # Check if audio_path needs to be added to an existing trades table
+    c.execute("PRAGMA table_info(trades)")
+    columns = [col[1] for col in c.fetchall()]
+    if 'audio_path' not in columns:
+        c.execute("ALTER TABLE trades ADD COLUMN audio_path TEXT")
     
     conn.commit()
     conn.close()
@@ -83,14 +97,29 @@ def get_all_strategies():
     conn.close()
     return df
 
+def delete_strategy(strategy_id):
+    """Deletes a strategy and lets SQLite handle cascading deletes via foreign keys."""
+    conn = get_connection()
+    c = conn.cursor()
+    # Execute PRAGMA foreign_keys = ON to ensure CASCADE works
+    c.execute("PRAGMA foreign_keys = ON")
+    
+    # Also manually delete trades since older table creations might not have the CASCADE rule
+    c.execute("DELETE FROM trades WHERE strategy_id = ?", (strategy_id,))
+    c.execute("DELETE FROM strategy_examples WHERE strategy_id = ?", (strategy_id,))
+    c.execute("DELETE FROM strategies WHERE id = ?", (strategy_id,))
+    
+    conn.commit()
+    conn.close()
+
 # --- Helper functions for Strategy Examples ---
-def add_strategy_example(strategy_id, image_path, comment):
+def add_strategy_example(strategy_id, image_path, comment, audio_path=None):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO strategy_examples (strategy_id, image_path, comment)
-        VALUES (?, ?, ?)
-    ''', (strategy_id, image_path, comment))
+        INSERT INTO strategy_examples (strategy_id, image_path, comment, audio_path)
+        VALUES (?, ?, ?, ?)
+    ''', (strategy_id, image_path, comment, audio_path))
     conn.commit()
     conn.close()
 
@@ -108,13 +137,13 @@ def delete_strategy_example(example_id):
     conn.close()
 
 # --- Helper functions for Trades ---
-def add_trade(symbol, entry_date, exit_date, direction, strategy_id, pnl, image_path, notes):
+def add_trade(symbol, entry_date, exit_date, direction, strategy_id, pnl, image_path, notes, audio_path=None):
     conn = get_connection()
     c = conn.cursor()
     c.execute('''
-        INSERT INTO trades (symbol, entry_date, exit_date, direction, strategy_id, pnl, image_path, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (symbol, entry_date, exit_date, direction, strategy_id, pnl, image_path, notes))
+        INSERT INTO trades (symbol, entry_date, exit_date, direction, strategy_id, pnl, image_path, notes, audio_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (symbol, entry_date, exit_date, direction, strategy_id, pnl, image_path, notes, audio_path))
     conn.commit()
     conn.close()
 
