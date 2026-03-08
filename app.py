@@ -24,7 +24,7 @@ inject_custom_css()
 
 def show_strategies_page():
     # Use HTML for the main title to utilize the new Space Grotesk gradient text styling
-    st.markdown("<h1>Mike's Trading Journal</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>Mike's Trading Journal</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
     col_strat_select, col_strat_new = st.columns([2, 1])
