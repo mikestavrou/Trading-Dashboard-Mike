@@ -27,76 +27,75 @@ def show_strategies_page():
     st.markdown("<h1 style='text-align: center;'>Mike's Trading Journal</h1>", unsafe_allow_html=True)
     st.markdown("---")
     
-    col_strat_select, col_strat_new = st.columns([2, 1])
     strats_df = get_all_strategies()
 
-    with col_strat_new:
-        st.subheader("Define New Strategy")
-        with st.expander("Create Strategy"):
-            with st.form("new_strategy_form", clear_on_submit=True):
-                strat_name = st.text_input("Name (e.g., ORB, S/R Flip)")
-                strat_desc = st.text_area("High-Level Description")
-                entry_rules = st.text_area("Entry Criteria", height=100)
-                exit_rules = st.text_area("Exit Criteria", height=100)
-                risk_mgt = st.text_area("Risk Management")
-                
-                if st.form_submit_button("Save Strategy"):
-                    if not strat_name:
-                        st.error("Strategy Name is required!")
-                    else:
-                        success = add_strategy(strat_name, strat_desc, entry_rules, exit_rules, risk_mgt)
-                        if success:
-                            st.success(f"'{strat_name}' created!")
-                            st.rerun()
-                        else:
-                            st.error("Name might already exist.")
-
-    with col_strat_select:
-        st.markdown("<h2>Active Strategies</h2>", unsafe_allow_html=True)
-        st.write("") # spacing
-        if strats_df.empty:
-            st.warning("No strategies found. Please create one to begin logging trades.")
-        else:
-            # Fetch all trades once to calculate metrics for the cards
-            all_trades_df = get_all_trades()
+    st.subheader("Define New Strategy")
+    with st.expander("Create Strategy"):
+        with st.form("new_strategy_form", clear_on_submit=True):
+            strat_name = st.text_input("Name (e.g., ORB, S/R Flip)")
+            strat_desc = st.text_area("High-Level Description")
+            entry_rules = st.text_area("Entry Criteria", height=100)
+            exit_rules = st.text_area("Exit Criteria", height=100)
+            risk_mgt = st.text_area("Risk Management")
             
-            # Display strategies as distinct cards
-            for _, row in strats_df.iterrows():
-                with st.container(border=True):
-                    cols = st.columns([6, 2])
-                    with cols[0]:
-                        st.markdown(f"### {row['name']}")
-                        st.write(f"*{row['description']}*")
-                        
-                        # Calculate Card Metrics
-                        strat_trades = all_trades_df[all_trades_df['strategy_id'] == row['id']] if not all_trades_df.empty else pd.DataFrame()
-                        num_trades = len(strat_trades)
-                        win_rate = (len(strat_trades[strat_trades['pnl'] > 0]) / num_trades * 100) if num_trades > 0 else 0
-                        total_pnl = strat_trades['pnl'].sum() if num_trades > 0 else 0.0
-                        
-                        pnl_color = "#3fb950" if total_pnl >= 0 else "#f85149"
-                        st.markdown(f"**Trades:** {num_trades} &nbsp;&nbsp;|&nbsp;&nbsp; **Win Rate:** {win_rate:.0f}% &nbsp;&nbsp;|&nbsp;&nbsp; **Net PnL:** <span style='color:{pnl_color};'>${total_pnl:.2f}</span>", unsafe_allow_html=True)
-                        
-                    with cols[1]:
-                        st.write("") # spacing
-                        if st.button("Open Gallery", key=f"open_{row['id']}", use_container_width=True):
-                            st.session_state['active_strat_id'] = row['id']
-                            st.session_state['page'] = 'gallery'
-                            st.session_state['show_log_form'] = False
-                            st.rerun()
+            if st.form_submit_button("Save Strategy"):
+                if not strat_name:
+                    st.error("Strategy Name is required!")
+                else:
+                    success = add_strategy(strat_name, strat_desc, entry_rules, exit_rules, risk_mgt)
+                    if success:
+                        st.success(f"'{strat_name}' created!")
+                        st.rerun()
+                    else:
+                        st.error("Name might already exist.")
+
+    st.markdown("---")
+
+    st.markdown("<h2>Active Strategies</h2>", unsafe_allow_html=True)
+    st.write("") # spacing
+    if strats_df.empty:
+        st.warning("No strategies found. Please create one to begin logging trades.")
+    else:
+        # Fetch all trades once to calculate metrics for the cards
+        all_trades_df = get_all_trades()
+        
+        # Display strategies as distinct cards
+        for _, row in strats_df.iterrows():
+            with st.container(border=True):
+                cols = st.columns([6, 2])
+                with cols[0]:
+                    st.markdown(f"### {row['name']}")
+                    st.write(f"*{row['description']}*")
                     
-                    with st.expander("View Strategy Rules", expanded=False):
-                        st.write(f"**Entry Rules:** {row['entry_rules']}")
-                        st.write(f"**Exit Rules:** {row['exit_rules']}")
-                        st.write(f"**Risk Management:** {row['risk_management']}")
-                        st.markdown("---")
-                        
-                        # Placed inside the expander to prevent accidental clicks
-                        col_rule1, col_rule2 = st.columns([4, 1])
-                        with col_rule2:
-                            if st.button("🗑️ Delete Strategy", key=f"del_strat_{row['id']}", help="Permanently delete this strategy and all its data", type="primary"):
-                                delete_strategy(row['id'])
-                                st.rerun()
+                    # Calculate Card Metrics
+                    strat_trades = all_trades_df[all_trades_df['strategy_id'] == row['id']] if not all_trades_df.empty else pd.DataFrame()
+                    num_trades = len(strat_trades)
+                    win_rate = (len(strat_trades[strat_trades['pnl'] > 0]) / num_trades * 100) if num_trades > 0 else 0
+                    total_pnl = strat_trades['pnl'].sum() if num_trades > 0 else 0.0
+                    
+                    pnl_color = "#3fb950" if total_pnl >= 0 else "#f85149"
+                    st.markdown(f"**Trades:** {num_trades} &nbsp;&nbsp;|&nbsp;&nbsp; **Win Rate:** {win_rate:.0f}% &nbsp;&nbsp;|&nbsp;&nbsp; **Net PnL:** <span style='color:{pnl_color};'>${total_pnl:.2f}</span>", unsafe_allow_html=True)
+                    
+                with cols[1]:
+                    st.write("") # spacing
+                    if st.button("Open Gallery", key=f"open_{row['id']}", use_container_width=True):
+                        st.session_state['active_strat_id'] = row['id']
+                        st.session_state['page'] = 'gallery'
+                        st.session_state['show_log_form'] = False
+                        st.rerun()
+                
+                with st.expander("View Strategy Rules", expanded=False):
+                    st.write(f"**Entry Rules:** {row['entry_rules']}")
+                    st.write(f"**Exit Rules:** {row['exit_rules']}")
+                    st.write(f"**Risk Management:** {row['risk_management']}")
+                    st.markdown("---")
+                    
+                    # Placed inside the expander to prevent accidental clicks
+                    col_rule1, col_rule2 = st.columns([4, 1])
+                    with col_rule2:
+                        if st.button("🗑️ Delete Strategy", key=f"del_strat_{row['id']}", help="Permanently delete this strategy and all its data", type="primary"):
+                            delete_strategy(row['id'])
+                            st.rerun()
 
 def show_gallery_page():
     active_strategy_id = st.session_state.get('active_strat_id')
