@@ -150,6 +150,23 @@ def inject_custom_css():
             }
             .stButton > button:hover::after { opacity: 1; }
             .stButton > button:active { transform: translateY(1px); }
+            /* TRADE button — kill ALL blue on active/focus, keep dark green */
+            div[data-testid="stButton"]:first-of-type > button,
+            div[data-testid="stButton"]:first-of-type > button:hover,
+            div[data-testid="stButton"]:first-of-type > button:active,
+            div[data-testid="stButton"]:first-of-type > button:focus,
+            div[data-testid="stButton"]:first-of-type > button:focus-visible,
+            div[data-testid="stButton"]:first-of-type > button:focus:not(:focus-visible) {
+                background: linear-gradient(135deg, rgba(15,23,42,0.97), rgba(5,46,22,0.65)) !important;
+                box-shadow: none !important;
+                outline: none !important;
+                outline-offset: 0 !important;
+                transform: none !important;
+                border: 2px solid rgba(34,197,94,0.5) !important;
+            }
+            div[data-testid="stButton"]:first-of-type > button::after {
+                display: none !important;
+            }
 
             /* Emphasized Form Buttons (Log Activity) */
             div[data-testid="stForm"] .stButton > button {
@@ -157,6 +174,48 @@ def inject_custom_css():
                 border: 1px solid transparent;
             }
             div[data-testid="stForm"] .stButton > button:hover { animation: none; }
+
+            /* ── TRADE mega button class (applied by JS in app.py) ── */
+            button.trade-mega-btn {
+                background: linear-gradient(135deg, rgba(15,23,42,0.97), rgba(5,46,22,0.65)) !important;
+                border: 2px solid rgba(34,197,94,0.5) !important;
+                border-radius: 20px !important;
+                min-height: 155px !important;
+                width: 100% !important;
+                padding: 20px 0 16px 0 !important;
+                box-shadow: 0 0 40px rgba(34,197,94,0.12) !important;
+                transition: box-shadow 0.2s ease !important;
+                outline: none !important;
+                transform: none !important;
+            }
+            button.trade-mega-btn:hover {
+                background: linear-gradient(135deg, rgba(15,23,42,0.97), rgba(5,46,22,0.65)) !important;
+                box-shadow: 0 0 65px rgba(34,197,94,0.35) !important;
+                border-color: rgba(34,197,94,0.85) !important;
+            }
+            button.trade-mega-btn:active,
+            button.trade-mega-btn:focus,
+            button.trade-mega-btn:focus-visible {
+                background: linear-gradient(135deg, rgba(15,23,42,0.97), rgba(5,46,22,0.65)) !important;
+                box-shadow: 0 0 25px rgba(34,197,94,0.15) !important;
+                border-color: rgba(34,197,94,0.6) !important;
+                outline: none !important;
+                outline-offset: 0 !important;
+            }
+            button.trade-mega-btn p {
+                font-size: 12px !important;
+                font-weight: 600 !important;
+                letter-spacing: 2.5px !important;
+                white-space: pre-line !important;
+                line-height: 2.4 !important;
+                color: #94a3b8 !important;
+            }
+            button.trade-mega-btn p::first-line {
+                font-size: 44px !important;
+                font-weight: 900 !important;
+                letter-spacing: 8px !important;
+                color: #22c55e !important;
+            }
 
             /* Expander (Glass Accordion) */
             .streamlit-expanderHeader {
@@ -327,3 +386,156 @@ def extract_ticker_from_image(pil_image, debug=False):
         if debug:
             st.session_state['ocr_debug_text'] = f"Gemini API Error: {str(e)}"
         return ""
+
+def get_market_condition():
+    """
+    Fetches REAL Solana DEX volume from DeFiLlama (free, no API key needed).
+    Fetches pump.fun graduation rate from Dune Analytics (needs DUNE_API_KEY in .env).
+    Returns: (vol_ok, grad_ok, gk_vol_24h, gk_avg_24h, gk_grad, error_msg)
+    """
+    import requests
+    import os
+
+    vol_ok = False
+    grad_ok = False
+    gk_vol   = 0.0
+    gk_avg   = 0.0
+    gk_grad  = 0.0
+    error_msg = ""
+
+    # ── 1. SOLANA DEX VOLUME — GeckoTerminal h1 (free, no key) ────────────
+    # Sum h1 volume across top Solana pools sorted by 24h volume.
+    # DeFiLlama still used for total7d → weekly hourly average.
+    try:
+        import time
+
+        # Step A: DeFiLlama for 7-day total (weekly hourly avg denominator)
+        r7d = requests.get(
+            "https://api.llama.fi/overview/dexs/solana"
+            "?excludeTotalDataChart=true&excludeTotalDataChartBreakdown=true&dataType=dailyVolume",
+            timeout=12
+        )
+        total7d  = 0.0
+        total24h_fallback = 0.0
+        if r7d.status_code == 200:
+            d7 = r7d.json()
+            total7d  = float(d7.get("total7d")  or 0)
+            total24h_fallback = float(d7.get("total24h") or 0)
+        gk_avg = round((total7d / 168) / 1_000_000, 2) if total7d else 0.0
+
+        # Step B: GeckoTerminal top pools → sum h1 volumes (true 1-hour data)
+        h1_total = 0.0
+        gt_ok = False
+        for page in range(1, 6):   # pages 1-5 = top ~100 pools by 24h volume
+            try:
+                gr = requests.get(
+                    f"https://api.geckoterminal.com/api/v2/networks/solana/pools"
+                    f"?sort=h24_volume_usd_desc&page={page}",
+                    headers={"Accept": "application/json;version=20230302"},
+                    timeout=10
+                )
+                if gr.status_code == 200:
+                    for pool in gr.json().get("data", []):
+                        vol_h1 = pool.get("attributes", {}).get("volume_usd", {}).get("h1", "0")
+                        h1_total += float(vol_h1 or 0)
+                    gt_ok = True
+                elif gr.status_code == 429:
+                    error_msg += "GeckoTerminal rate-limited. "
+                    break
+                time.sleep(0.25)   # be polite to the free API
+            except Exception:
+                break
+
+        if gt_ok and h1_total > 0:
+            gk_vol = round(h1_total / 1_000_000, 2)
+            vol_ok = gk_vol > gk_avg
+        else:
+            # Fallback: DeFiLlama 24h ÷ 24
+            gk_vol = round((total24h_fallback / 24) / 1_000_000, 2)
+            vol_ok = gk_vol > gk_avg
+            error_msg += "GeckoTerminal unavailable — using DeFiLlama 24h estimate. "
+
+    except Exception as e:
+        error_msg += f"Volume fetch error: {str(e)[:60]}. "
+
+    # ── 2. PUMP.FUN GRADUATION RATE — Dune query 6375001 (non-blocking) ──────
+    # Phase 1 (first call): triggers a fresh Dune execution, returns -2.0 (pending).
+    # Phase 2 (after Refresh): checks the stored execution_id for results.
+    # This keeps the dashboard from freezing during Dune's 60-90s query time.
+    try:
+        dune_key = os.getenv("DUNE_API_KEY", "")
+        if not dune_key:
+            gk_grad = 0.0
+            error_msg += "No DUNE_API_KEY in .env — graduation rate unavailable. "
+        else:
+            DUNE_HEADERS = {"X-DUNE-API-KEY": dune_key}
+            # `dune_exec_id` is passed in from session state (None on first run)
+            dune_exec_id = os.getenv("_DUNE_EXEC_ID_INTERNAL", "")  # not used — see app.py
+
+            # Try to get latest results directly first (fast path — cached result)
+            fast = requests.get(
+                "https://api.dune.com/api/v1/query/6375001/results?limit=5",
+                headers=DUNE_HEADERS, timeout=10
+            )
+            if fast.status_code == 200:
+                rows = fast.json().get("result", {}).get("rows", [])
+                rate = None
+                for row in rows:
+                    r_val = row.get("Graduation Rate (%)")
+                    day_val = row.get("day", "")
+                    # Only accept rows from 2026
+                    if r_val is not None and "2026" in str(day_val):
+                        rate = r_val
+                        break
+                if rate is not None:
+                    gk_grad = round(float(rate), 2)
+                    grad_ok = gk_grad > 1.2
+                else:
+                    # No 2026 data yet → trigger a fresh execution and return pending
+                    exec_r = requests.post(
+                        "https://api.dune.com/api/v1/query/6375001/execute",
+                        headers=DUNE_HEADERS, json={}, timeout=10
+                    )
+                    gk_grad = -2.0   # sentinel: "execution triggered, check back"
+                    if exec_r.status_code == 200:
+                        error_msg += f"Dune running (exec {exec_r.json().get('execution_id','?')[:12]}…). Hit Refresh in ~90s. "
+                    else:
+                        error_msg += "Dune triggered but no 2026 data yet. Hit Refresh soon. "
+            else:
+                gk_grad = 0.0
+                error_msg += f"Dune results HTTP {fast.status_code}. "
+    except Exception as e:
+        gk_grad = 0.0
+        error_msg += f"Graduation rate error: {str(e)[:50]}. "
+
+    return vol_ok, grad_ok, gk_vol, gk_avg, gk_grad, error_msg
+
+def get_wallet_condition(trades_df, max_daily_loss, max_consecutive_losses):
+    """
+    Evaluates wallet P&L and recent trade history to prevent overtrading.
+    Returns: (is_safe: bool, message: str)
+    """
+    if trades_df.empty:
+        return True, "No recent trades. You are safe to start."
+        
+    # 1. Check Max Daily Loss
+    # Get today's trades based on entry_date string matching today
+    today_str = datetime.now().date().strftime('%Y-%m-%d')
+    todays_trades = trades_df[trades_df['entry_date'] == today_str]
+    
+    if not todays_trades.empty:
+        daily_pnl = todays_trades['pnl'].sum()
+        if daily_pnl <= -max_daily_loss:
+            return False, f"Daily Loss Limit Reached! (Current PnL: ${daily_pnl:.2f} / Max: -${max_daily_loss:.2f})"
+            
+    # 2. Check Consecutive Losses (Revenge Trading)
+    # The dataframe is already ordered by created_at DESC (newest first)
+    if not trades_df.empty:
+        # Get the 'pnl' column of the first N trades
+        recent_pnls = trades_df['pnl'].head(max_consecutive_losses).tolist()
+        
+        # Check if we actually have that many trades and ALL of them are negative
+        if len(recent_pnls) == max_consecutive_losses and all(pnl < 0 for pnl in recent_pnls):
+            return False, f"Revenge Trading Detected! {max_consecutive_losses} consecutive losses."
+            
+    return True, "Wallet and Risk Limits are Stable."

@@ -71,9 +71,19 @@ def init_db():
     columns = [col[1] for col in c.fetchall()]
     if 'audio_path' not in columns:
         c.execute("ALTER TABLE trades ADD COLUMN audio_path TEXT")
-    
+
+    # Table: Daily Loss Limits (one per day, locked once saved)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS daily_limits (
+            date TEXT PRIMARY KEY,
+            loss_limit REAL NOT NULL,
+            locked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
     conn.close()
+
 
 # --- Helper functions for Strategies ---
 def add_strategy(name, description, entry_rules, exit_rules, risk_management):
@@ -163,5 +173,27 @@ def delete_trade(trade_id):
     conn = get_connection()
     c = conn.cursor()
     c.execute("DELETE FROM trades WHERE id = ?", (trade_id,))
+    conn.commit()
+    conn.close()
+
+# --- Daily Loss Limit helpers ---
+def get_daily_limit(date_str):
+    """Return the locked loss limit for date_str (YYYY-MM-DD), or None if not set."""
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT loss_limit FROM daily_limits WHERE date = ?", (date_str,))
+    row = c.fetchone()
+    conn.close()
+    return float(row[0]) if row else None
+
+def set_daily_limit(date_str, limit):
+    """Save and lock the loss limit for date_str. No-op if already set."""
+    conn = get_connection()
+    c = conn.cursor()
+    # Only insert — never update after lock (IGNORE on conflict)
+    c.execute(
+        "INSERT OR IGNORE INTO daily_limits (date, loss_limit) VALUES (?, ?)",
+        (date_str, float(limit))
+    )
     conn.commit()
     conn.close()
